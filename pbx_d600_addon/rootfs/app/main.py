@@ -31,7 +31,7 @@ _LOGGER = logging.getLogger("pbx_d600")
 DATA = Path(os.environ.get("PBX_DATA", "/data"))
 WEB = Path(__file__).parent / "web"
 PORT = int(os.environ.get("PBX_WEB_PORT", "8099"))
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 
 def load_options() -> dict:

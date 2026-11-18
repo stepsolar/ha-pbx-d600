@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Centralino PBX D600</title>
 <style>
   :root {
@@ -91,6 +91,80 @@
   .fwdform label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); font-weight:600; }
   .fwdform select, .fwdform input { font-size:14px; color:var(--text); font-weight:400; }
   .on-fwd { color: var(--accent); font-weight:600; }
+  .h2row { justify-content:space-between; flex-wrap:wrap; }
+  input, select, button { font-size:16px; } /* evita lo zoom automatico su iPhone */
+  @media (min-width: 641px) { input, select, .btn, nav button { font-size:14px; } }
+
+  @media (max-width: 640px) {
+    .bar { padding:10px 12px 0; gap:8px; }
+    .brand { font-size:16px; }
+    .pill { margin-left:auto; padding:4px 10px; font-size:12px; }
+    nav { order:3; width:100%; margin:0 -12px; padding:0 8px 8px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+    nav::-webkit-scrollbar { display:none; }
+    nav button { flex:none; padding:8px 12px; }
+    main { padding:12px; }
+    .card { padding:14px; margin-bottom:12px; border-radius:12px; }
+    .stats { gap:8px; margin-bottom:12px; }
+    .stat { padding:10px 12px; }
+    .stat .ic { width:36px; height:36px; }
+    .stat b { font-size:20px; }
+    .grid2 { gap:12px; }
+    .trunks { grid-template-columns:repeat(2,1fr); }
+    .exts { grid-template-columns:repeat(auto-fill, minmax(72px,1fr)); }
+
+    .filters { gap:8px; }
+    .filters .seg { width:100%; } .filters .seg button { flex:1; padding:7px 4px; }
+    .filters input[type=search] { width:100%; min-width:0 !important; }
+    .filters label { flex:1; display:flex; flex-direction:column; font-size:12px; gap:2px; }
+    .filters label input { width:100%; }
+    .filters #csv { width:100%; justify-content:center; }
+    .pager { flex-direction:column; gap:8px; align-items:stretch; text-align:center; }
+    .pager span:last-child { display:flex; gap:8px; } .pager .btn { flex:1; justify-content:center; }
+
+    /* tabelle -> schede impilate */
+    table.rt thead { display:none; }
+    table.rt, table.rt tbody { display:block; }
+    table.rt tr { display:grid; gap:2px 10px; padding:10px 2px; border-bottom:1px solid var(--line); }
+    table.rt tr:last-child { border-bottom:0; }
+    table.rt td { display:block; padding:0; border:0; min-width:0; }
+    table.rt td[data-l]::before { content: attr(data-l) " "; color:var(--muted); font-size:12px; }
+    table.rt td.empty { grid-column:1 / -1; }
+
+    .t-log tr { grid-template-columns: 1fr auto; }
+    .t-log td:nth-child(1) { grid-area:1 / 1; }
+    .t-log td:nth-child(5) { grid-area:1 / 2; text-align:right; font-size:13px; color:var(--muted); }
+    .t-log td:nth-child(2) { grid-area:2 / 1; font-size:15px; }
+    .t-log td:nth-child(6) { grid-area:2 / 2; }
+    .t-log td:nth-child(3) { grid-area:3 / 1; font-size:13px; }
+    .t-log td:nth-child(4) { grid-area:3 / 2; font-size:13px; text-align:right; }
+
+    .t-ext tr { grid-template-columns: auto 1fr auto; align-items:center; }
+    .t-ext td:nth-child(1) { grid-area:1 / 1; font-size:12px; }
+    .t-ext td:nth-child(2) { grid-area:1 / 2; font-size:16px; }
+    .t-ext td:nth-child(4) { grid-area:1 / 3; }
+    .t-ext td:nth-child(3) { grid-area:2 / 1 / 3 / 4; margin-top:6px; }
+    .t-ext td:nth-child(3) input { width:100%; }
+    .t-ext td.fw { grid-area:3 / 1 / 4 / 4; display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:6px; font-size:13px; }
+
+    .t-fwd tr { grid-template-columns: 1fr auto; }
+    .t-fwd td:nth-child(1) { grid-area:1 / 1; font-size:16px; }
+    .t-fwd td:nth-child(2) { grid-area:1 / 2; color:var(--muted); }
+    .t-fwd td:nth-child(3) { grid-area:2 / 1 / 3 / 3; }
+    .t-fwd td:nth-child(4) { grid-area:3 / 1 / 4 / 3; }
+    .t-fwd td.acts { grid-area:4 / 1 / 5 / 3; display:flex; gap:8px; margin-top:6px; text-align:left !important; }
+    .t-fwd td.acts .btn { flex:1; justify-content:center; }
+
+    .t-book tr { grid-template-columns: 1fr auto; align-items:center; }
+    .t-book td:nth-child(1) { grid-area:2 / 1; color:var(--muted); }
+    .t-book td:nth-child(2) { grid-area:1 / 1; }
+    .t-book td:nth-child(3) { grid-area:1 / 2 / 3 / 3; }
+
+    .fwdform label { min-width:0 !important; width:100%; }
+    .fwdform .btn { width:100%; justify-content:center; padding:10px; }
+    #v-book .filters input { width:100%; min-width:0 !important; }
+    #v-book .filters .btn { width:100%; justify-content:center; }
+    .call { gap:10px; }
+  }
   .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--card); padding:10px 16px; border-radius:10px; opacity:0; transition:.2s; pointer-events:none; }
   .toast.show { opacity:1; }
   a.num { color:inherit; text-decoration:none; }
@@ -145,7 +219,7 @@
         <label class="muted">al <input id="f-to" type="date"></label>
         <a class="btn" id="csv" href="#">Esporta CSV</a>
       </div>
-      <table>
+      <table class="rt t-log">
         <thead><tr><th></th><th>Numero</th><th>Interno</th><th>Linea</th><th>Data e ora</th><th style="text-align:right">Durata</th></tr></thead>
         <tbody id="log-rows"></tbody>
       </table>
@@ -158,7 +232,7 @@
     <div class="card">
       <div class="note">Dai un nome agli interni: comparirà nella plancia, nel registro e nelle entità di Home Assistant.
         La deviazione di chiamata si imposta dalla scheda <b>Impostazioni</b>.</div>
-      <table>
+      <table class="rt t-ext">
         <thead><tr><th>Porta</th><th>Interno</th><th>Nome</th><th>Stato</th><th>Deviazione</th></tr></thead>
         <tbody id="ext-rows"></tbody>
       </table>
@@ -175,7 +249,7 @@
         <button class="btn primary" id="b-add">Salva</button>
       </div>
       <h2 style="margin-top:18px">Contatti</h2>
-      <table><thead><tr><th>Numero</th><th>Nome</th><th></th></tr></thead><tbody id="book-rows"></tbody></table>
+      <table class="rt t-book"><thead><tr><th>Numero</th><th>Nome</th><th></th></tr></thead><tbody id="book-rows"></tbody></table>
     </div>
   </section>
 
@@ -195,8 +269,8 @@
       <div id="s-msg" class="muted" style="margin-top:8px"></div>
     </div>
     <div class="card">
-      <h2>Deviazioni attive <button class="btn" id="s-refresh" style="margin-left:auto">Rileggi dal centralino</button></h2>
-      <table><thead><tr><th>Interno</th><th>Nome</th><th>Trasferimento</th><th>Verso</th><th></th></tr></thead><tbody id="fwd-rows"></tbody></table>
+      <h2 class="h2row">Deviazioni attive <button class="btn" id="s-refresh">Rileggi dal centralino</button></h2>
+      <table class="rt t-fwd"><thead><tr><th>Interno</th><th>Nome</th><th>Trasferimento</th><th>Verso</th><th></th></tr></thead><tbody id="fwd-rows"></tbody></table>
     </div>
   </section>
 
@@ -291,7 +365,7 @@ async function loadLog() {
   document.getElementById('log-rows').innerHTML = r.calls.length ? r.calls.map(c => { const [l,col,i] = CALL[c.esito] || CALL.effettuata;
     return `<tr><td><span class="tag" style="--c:${col}">${icon(i,16)} ${l}</span></td>
       <td>${c.numero ? `<a class="num" href="tel:${esc(c.numero)}"><b>${esc(c.nome || c.numero)}</b></a>${c.nome ? ` <span class="muted">${esc(c.numero)}</span>` : ''}` : '<span class="muted">sconosciuto</span>'}</td>
-      <td>${esc(c.interno || '—')}${c.nome_interno ? ` <span class="muted">${esc(c.nome_interno)}</span>` : ''}</td><td>${c.linea ?? ''}</td>
+      <td data-l="Int.">${esc(c.interno || '—')}${c.nome_interno ? ` <span class="muted">${esc(c.nome_interno)}</span>` : ''}</td><td data-l="Linea">${c.linea ?? ''}</td>
       <td>${esc(new Date(c.inizio).toLocaleString('it-IT', {dateStyle:'short', timeStyle:'short'}))}</td><td style="text-align:right" class="mono">${dur(c.durata)}</td></tr>`; }).join('')
     : '<tr><td colspan="6" class="empty">Nessuna chiamata trovata.</td></tr>';
   document.getElementById('log-info').textContent = r.total ? `${L.offset + 1}–${Math.min(L.offset + L.limit, r.total)} di ${r.total}` : '';
@@ -315,10 +389,10 @@ function renderExtTable() {
   const focused = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.ext;
   if (focused) return; // non ridisegnare mentre si scrive
   tb.innerHTML = S.extensions.map(e => { const [l,c] = EXT[e.state] || EXT.libero;
-    return `<tr><td class="muted">${e.port}</td><td><b>${esc(e.number)}</b></td>
+    return `<tr><td class="muted" data-l="Porta">${e.port}</td><td><b>${esc(e.number)}</b></td>
       <td><input data-ext="${esc(e.number)}" value="${esc(e.name || '')}" placeholder="Es. Reception"></td>
       <td><span class="tag" style="--c:${c}"><i></i>${l}</span></td>
-      <td>${fwdText(e.forwarding)} <button class="btn" data-fwd="${esc(e.number)}" style="margin-left:6px">Modifica</button></td></tr>`; }).join('');
+      <td class="fw">${fwdText(e.forwarding)} <button class="btn" data-fwd="${esc(e.number)}" style="margin-left:6px">Modifica</button></td></tr>`; }).join('');
   tb.querySelectorAll('[data-fwd]').forEach(b => b.onclick = () => { go('set'); setTimeout(() => pickExt(b.dataset.fwd), 50); });
   tb.querySelectorAll('input[data-ext]').forEach(inp => inp.onchange = () => saveName('ext', inp.dataset.ext, inp.value));
 }
@@ -326,10 +400,10 @@ function renderExtTable() {
 // ---------- impostazioni / deviazioni
 let FWD = null;
 function fwdText(f) {
-  if (!f) return '<span class="muted">—</span>';
-  if (f.code === 0) return '<span class="muted">Nessuna</span>';
+  if (!f) return '<span class="fwt muted">—</span>';
+  if (f.code === 0) return '<span class="fwt muted">Nessuna</span>';
   const to = [1,2].includes(f.code) ? `int. ${esc(f.target)}` : esc(f.number || '?');
-  return `<span class="on-fwd">${esc(f.label)}</span> → ${to}`;
+  return `<span class="fwt"><span class="on-fwd">${esc(f.label)}</span> → ${to}</span>`;
 }
 async function loadFwd(refresh) {
   FWD = await api('api/forwarding' + (refresh ? '?refresh=1' : ''));
@@ -340,8 +414,8 @@ async function loadFwd(refresh) {
   pickExt(keep || FWD.extensions[0]?.number);
   const rows = FWD.extensions.filter(e => e.forwarding && e.forwarding.code !== 0);
   document.getElementById('fwd-rows').innerHTML = rows.length ? rows.map(e => `<tr><td><b>${esc(e.number)}</b></td><td>${esc(e.name || '')}</td>
-      <td class="on-fwd">${esc(e.forwarding.label)}</td><td>${[1,2].includes(e.forwarding.code) ? 'Interno ' + esc(e.forwarding.target) : esc(e.forwarding.number || '')}</td>
-      <td style="text-align:right"><button class="btn" data-edit="${esc(e.number)}">Modifica</button> <button class="btn" data-off="${esc(e.number)}">Disattiva</button></td></tr>`).join('')
+      <td class="on-fwd">${esc(e.forwarding.label)}</td><td data-l="Verso">${[1,2].includes(e.forwarding.code) ? 'Interno ' + esc(e.forwarding.target) : esc(e.forwarding.number || '')}</td>
+      <td class="acts" style="text-align:right"><button class="btn" data-edit="${esc(e.number)}">Modifica</button> <button class="btn" data-off="${esc(e.number)}">Disattiva</button></td></tr>`).join('')
     : '<tr><td colspan="5" class="empty">Nessuna deviazione attiva.</td></tr>';
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => pickExt(b.dataset.edit));
   document.querySelectorAll('[data-off]').forEach(b => b.onclick = () => applyFwd({ interno: b.dataset.off, modalita: 0 }));
