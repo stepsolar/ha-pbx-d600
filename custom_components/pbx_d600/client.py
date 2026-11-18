@@ -77,6 +77,9 @@ class PbxClient:
         self.unknown_frames: list[str] = []
         self.on_call_ended: Callable[[dict], None] | None = None
         self.on_unknown: Callable[[], None] | None = None
+        self._last_offhook: int | None = None
+        self._await_bill: dict[int, tuple[dict, asyncio.TimerHandle | None]] = {}
+        self._seen_bills: dict[bytes, float] = {}
 
     # ------------------------------------------------------------ lifecycle
     @property
@@ -208,25 +211,77 @@ class PbxClient:
         self._active[trunk] = call
         return call
 
+    def _finalize(self, call: dict) -> None:
+        self.calls.insert(0, call)
+        del self.calls[200:]
+        if self.on_call_ended:
+            self.on_call_ended(call)
+
     def _call_end(self, trunk: int) -> None:
         call = self._active.pop(trunk, None)
         if call is None:
             return
         end = self._now()
         call["fine"] = end.isoformat(timespec="seconds")
+        if call["direzione"] == "uscente":
+            # il riepilogo col numero composto arriva subito dopo: lo aspetto qualche secondo
+            call["esito"] = "effettuata"
+            if call["risposta"]:
+                call["durata"] = int((end - datetime.fromisoformat(call["risposta"])).total_seconds())
+            handle = None
+            try:
+                handle = asyncio.get_running_loop().call_later(8, self._bill_timeout, trunk)
+            except RuntimeError:  # nessun loop (test)
+                pass
+            self._await_bill[trunk] = (call, handle)
+            return
         if call["risposta"]:
             call["durata"] = int((end - datetime.fromisoformat(call["risposta"])).total_seconds())
-            call["esito"] = "risposta" if call["direzione"] == "entrante" else "effettuata"
+            call["esito"] = "risposta"
         else:
-            call["esito"] = "persa" if call["direzione"] == "entrante" else "non risposta"
-        self.calls.insert(0, call)
-        del self.calls[200:]
-        if self.on_call_ended:
-            self.on_call_ended(call)
+            call["esito"] = "persa"
+        self._finalize(call)
+
+    def _bill_timeout(self, trunk: int) -> None:
+        item = self._await_bill.pop(trunk, None)
+        if item:
+            self._finalize(item[0])
+
+    def _on_bill(self, m: p.Message) -> None:
+        self.send(p.build_bill_ack(m.trunk_raw))
+        now = time.monotonic()
+        self._seen_bills = {k: t for k, t in self._seen_bills.items() if now - t < 120}
+        if m.raw in self._seen_bills:  # ripetizione dello stesso riepilogo
+            return
+        self._seen_bills[m.raw] = now
+        if m.direction not in (0, None):
+            return  # riepilogo di chiamata entrante: già registrata dagli eventi
+        item = self._await_bill.pop(m.trunk, None)
+        if item:
+            call, handle = item
+            if handle:
+                handle.cancel()
+        else:
+            n = self._now()
+            mo, d, h, mi = m.start
+            call = {
+                "direzione": "uscente", "linea": m.trunk, "numero": None, "interno": None,
+                "inizio": n.replace(month=mo, day=d, hour=h, minute=mi, second=0, microsecond=0).isoformat(timespec="seconds"),
+                "risposta": None, "fine": n.isoformat(timespec="seconds"), "durata": 0, "esito": "effettuata",
+            }
+        call["numero"] = m.number or call["numero"]
+        call["interno"] = self._ext(m.port) or call["interno"]
+        call["durata"] = m.duration
+        self._finalize(call)
 
     def _track_calls(self, m: p.Message) -> None:
         k = m.kind
-        if k == "trunk_ringing" and m.trunk not in self._active:
+        if k == "off_hook":
+            self._last_offhook = m.port
+        elif k == "trunk_seized":
+            call = self._call_start(m.trunk, "uscente")
+            call["interno"] = self._ext(self._last_offhook)
+        elif k == "trunk_ringing" and m.trunk not in self._active:
             self._call_start(m.trunk, "entrante")
         elif k == "caller_id":
             call = self._active.get(m.trunk) or self._call_start(m.trunk, "entrante")
@@ -234,13 +289,14 @@ class PbxClient:
         elif k == "trunk_connected":
             call = self._active.get(m.trunk)
             if call is None:
-                # linea impegnata senza squillo prima: chiamata in uscita
                 call = self._call_start(m.trunk, "uscente")
             call["interno"] = self._ext(m.port)
             if call["risposta"] is None:
                 call["risposta"] = self._now().isoformat(timespec="seconds")
         elif k == "trunk_released":
             self._call_end(m.trunk)
+        elif k == "call_record":
+            self._on_bill(m)
         elif k == "unknown":
             self.unknown_frames.insert(0, f"{self._now().isoformat(timespec='seconds')} {m.raw.hex(' ')}")
             del self.unknown_frames[100:]
@@ -273,6 +329,12 @@ class PbxClient:
             self.ext_state[m.port] = EXT_RINGING
         elif k == "trunk_ringing" and m.trunk in self.trunk_state:
             self.trunk_state[m.trunk] = TRUNK_RINGING
+        elif k == "trunk_seized":
+            if m.trunk in self.trunk_state:
+                self.trunk_state[m.trunk] = TRUNK_BUSY
+            if self._last_offhook in self.ext_state:
+                self.ext_state[self._last_offhook] = EXT_EXTERNAL
+                self.ext_trunk[self._last_offhook] = m.trunk
         elif k == "trunk_connected":
             if m.trunk in self.trunk_state:
                 self.trunk_state[m.trunk] = TRUNK_BUSY
@@ -287,7 +349,7 @@ class PbxClient:
                 if st == EXT_RINGING:
                     self.ext_state[port] = EXT_IDLE
         elif k == "caller_id":
-            self.send(p.build_cid_ack(m.trunk))
+            self.send(p.build_cid_ack(m.trunk_raw))
             if m.trunk in self.trunk_cid:
                 self.trunk_cid[m.trunk] = m.number
             self.last_cid = m.number

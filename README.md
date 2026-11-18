@@ -31,7 +31,8 @@ Integrazione per il centralino gestito dal programma "PBX D600" (modello D832-L:
   - Ogni chiamata ha questi campi: direzione, linea, numero, interno, inizio, risposta, fine, durata (secondi), esito.
 - **Persistenza**: il registro viene salvato e sopravvive ai riavvii (ultime 200 chiamate).
 - **Evento `pbx_d600_call`**: viene emesso a fine chiamata, con tutti i dati.
-- **Chiamate in uscita**: vengono riconosciute quando un interno impegna una linea esterna. Il numero composto non è ancora decifrato. I messaggi sconosciuti finiscono nel sensore diagnostico "Messaggi non riconosciuti" e servono per aggiungerlo.
+- **Chiamate in uscita** (dalla 0.3): vengono riconosciute quando un interno impegna una linea esterna. Numero composto e durata arrivano dal riepilogo di addebito che il centralino invia a fine chiamata. L'integrazione conferma la ricezione del riepilogo, così il centralino smette di rinviarlo.
+- **Messaggi non ancora decifrati**: finiscono nel sensore diagnostico "Messaggi non riconosciuti".
 
 ### Scheda per la dashboard (Markdown)
 
@@ -85,5 +86,9 @@ UDP: Home Assistant usa la porta 50000, il centralino la 50001. Ogni frame ha qu
 | PBX→HA | `17 T` / `18 T` | linea T squilla / si libera |
 | PBX→HA | `80 T P` | linea T collegata all'interno P |
 | PBX→HA | `08 T 01 N cifre` | caller ID (cifre BCD con nibble invertiti, 0xD = fine); HA risponde `08 T` |
+| PBX→HA | `19 T` | linea T impegnata da un interno (chiamata in uscita) |
+| PBX→HA | `01 T xx P D MM GG hh mm dh dm ds <8 byte cifre> <3 byte>` | riepilogo di fine chiamata (BCD), ripetuto finché HA non risponde `01 T` |
+
+Le linee nei messaggi partono da 0 (T=0 è la linea 1), le porte degli interni partono da 1.
 
 Memoria: la tabella dei numeri interni parte da `0x0300`, con 4 byte per porta.

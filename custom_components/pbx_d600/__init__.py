@@ -56,10 +56,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: PbxConfigEntry) -> bool:
 
 
 async def _setup(hass: HomeAssistant, entry: PbxConfigEntry, client: PbxClient) -> bool:
+    signal = SIGNAL_UPDATE.format(entry.entry_id)
     store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.calls")
     saved = await store.async_load() or {}
     client.calls = saved.get("calls", []) + client.calls
-    client.unknown_frames = saved.get("unknown", []) + client.unknown_frames
+    def _still_unknown(line: str) -> bool:
+        try:
+            return p.parse(bytes.fromhex(line.split(" ", 1)[1])).kind == "unknown"
+        except (ValueError, IndexError):
+            return False
+
+    # scarta i messaggi salvati che nel frattempo sono stati decifrati
+    client.unknown_frames = [x for x in saved.get("unknown", []) if _still_unknown(x)] + client.unknown_frames
 
     def _save() -> dict:
         return {"calls": client.calls, "unknown": client.unknown_frames}
@@ -67,14 +75,13 @@ async def _setup(hass: HomeAssistant, entry: PbxConfigEntry, client: PbxClient) 
     def _on_call_ended(call: dict) -> None:
         hass.bus.async_fire(EVENT_CALL, dict(call))
         store.async_delay_save(_save, 5)
+        async_dispatcher_send(hass, signal)
 
     client.on_call_ended = _on_call_ended
     client.on_unknown = lambda: store.async_delay_save(_save, 5)
 
     if not await client.load_extension_numbers():
         _LOGGER.warning("Impossibile leggere i numeri interni: uso i numeri di porta")
-
-    signal = SIGNAL_UPDATE.format(entry.entry_id)
 
     def _on_message(msg: p.Message) -> None:
         if msg.kind not in ("heartbeat", "clock_ack", "memory"):
