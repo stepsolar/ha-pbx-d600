@@ -34,22 +34,27 @@ Integrazione per il centralino gestito dal programma "PBX D600" (modello D832-L:
 - **Chiamate in uscita** (dalla 0.3): vengono riconosciute quando un interno impegna una linea esterna. Numero composto e durata arrivano dal riepilogo di addebito che il centralino invia a fine chiamata. L'integrazione conferma la ricezione del riepilogo, così il centralino smette di rinviarlo.
 - **Messaggi non ancora decifrati**: finiscono nel sensore diagnostico "Messaggi non riconosciuti".
 
-### Scheda per la dashboard (Markdown)
+## Scheda per la dashboard (dalla 0.4)
+
+![Anteprima della scheda](docs/scheda.png)
+
+L'integrazione include una scheda dedicata, **"Centralino PBX D600"**, che si registra da sola. Non serve installare risorse né usare HACS Frontend. La scheda mostra:
+- lo stato del collegamento e i contatori di oggi (ricevute, perse, effettuate, linee in uso);
+- le linee esterne, con il numero del chiamante quando squillano;
+- la griglia degli interni (libero, sganciato, squilla, in linea);
+- il registro chiamate, con le schede Tutte / Ricevute / Perse / Effettuate. Il numero è cliccabile per richiamare.
+
+Per aggiungerla: modifica una dashboard → **Aggiungi scheda** → cerca **"Centralino PBX D600"**. In alternativa usa il codice YAML:
 
 ```yaml
-type: markdown
-title: Chiamate
-content: >-
-  {% set ric = state_attr('sensor.centralino_pbx_d600_chiamate_ricevute','chiamate') or [] %}
-  {% set per = state_attr('sensor.centralino_pbx_d600_chiamate_perse','chiamate') or [] %}
-  {% set eff = state_attr('sensor.centralino_pbx_d600_chiamate_effettuate','chiamate') or [] %}
-  {% set tutte = (ric + per + eff) | sort(attribute='inizio', reverse=true) %}
-  | | Ora | Numero | Interno | Linea | Durata |
-  |---|---|---|---|---|---|
-  {% for c in tutte[:20] -%}
-  | {{ {'risposta':'📥','persa':'❌','effettuata':'📤','non risposta':'📤❌'}[c.esito] }} | {{ as_timestamp(c.inizio) | timestamp_custom('%d/%m %H:%M') }} | {{ c.numero or '-' }} | {{ c.interno or '-' }} | {{ c.linea }} | {{ (c.durata // 60) }}:{{ '%02d' % (c.durata % 60) }} |
-  {% endfor %}
+type: custom:pbx-d600-card
+title: Centralino          # opzionale
+show_trunks: true          # opzionale
+show_extensions: true      # opzionale
+max_calls: 25              # opzionale
 ```
+
+Per averla a tutto schermo: crea una nuova dashboard, poi apri la vista → **Modifica vista** → tipo di vista **Pannello (scheda singola)** e aggiungi la scheda.
 
 ## Esempio di automazione: notifica di chiamata in arrivo
 

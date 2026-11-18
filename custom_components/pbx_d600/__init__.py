@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import voluptuous as vol
 
@@ -31,7 +32,28 @@ PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 type PbxConfigEntry = ConfigEntry[PbxClient]
 
 
+CARD_URL = f"/{DOMAIN}/pbx-d600-card.js"
+CARD_VERSION = "0.4.0"
+
+
+async def _register_card(hass: HomeAssistant) -> None:
+    """Serve la scheda Lovelace e la carica automaticamente nel frontend."""
+    if hass.data.get(f"{DOMAIN}_card"):
+        return
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+
+    path = Path(__file__).parent / "www" / "pbx-d600-card.js"
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(path), False)])
+    add_extra_js_url(hass, f"{CARD_URL}?v={CARD_VERSION}")
+    hass.data[f"{DOMAIN}_card"] = True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: PbxConfigEntry) -> bool:
+    try:
+        await _register_card(hass)
+    except Exception:  # noqa: BLE001 - la scheda è un extra, non deve bloccare l'integrazione
+        _LOGGER.exception("Impossibile registrare la scheda Lovelace")
     cfg = {**entry.data, **entry.options}
     client = PbxClient(
         cfg[CONF_HOST],

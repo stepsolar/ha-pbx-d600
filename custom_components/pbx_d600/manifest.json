@@ -1,12 +1,18 @@
 {
   "domain": "pbx_d600",
   "name": "PBX D600",
-  "codeowners": ["@stepsolar"],
+  "codeowners": [
+    "@stepsolar"
+  ],
   "config_flow": true,
+  "dependencies": [
+    "http",
+    "frontend"
+  ],
   "documentation": "https://github.com/stepsolar/ha-pbx-d600",
-  "issue_tracker": "https://github.com/stepsolar/ha-pbx-d600/issues",
   "integration_type": "hub",
   "iot_class": "local_push",
+  "issue_tracker": "https://github.com/stepsolar/ha-pbx-d600/issues",
   "requirements": [],
-  "version": "0.3.0"
+  "version": "0.4.0"
 }
