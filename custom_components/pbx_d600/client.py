@@ -80,6 +80,10 @@ class PbxClient:
         self._last_offhook: int | None = None
         self._await_bill: dict[int, tuple[dict, asyncio.TimerHandle | None]] = {}
         self._seen_bills: dict[bytes, float] = {}
+        self._write_waiter: asyncio.Future | None = None
+        self._commit_waiter: asyncio.Future | None = None
+        self._write_lock = asyncio.Lock()
+        self.forwarding: dict[int, dict] = {}
 
     # ------------------------------------------------------------ lifecycle
     @property
@@ -160,6 +164,87 @@ class PbxClient:
         table = p.decode_ext_table(buf[offset:], self.num_ext)
         self.extensions.update(table)
         _LOGGER.info("Numeri interni letti dal centralino: %s", table)
+        return True
+
+    # ------------------------------------------------------------ scrittura / deviazioni
+    async def _send_wait(self, frame: bytes, attr: str, retries: int = 3) -> bool:
+        loop = asyncio.get_running_loop()
+        for _ in range(retries):
+            fut = loop.create_future()
+            setattr(self, attr, fut)
+            self.send(frame)
+            try:
+                await asyncio.wait_for(fut, 2.0)
+                return True
+            except asyncio.TimeoutError:
+                continue
+            finally:
+                setattr(self, attr, None)
+        return False
+
+    async def write_bytes(self, addr: int, data: bytes) -> bool:
+        """Scrive byte per byte con conferma dopo ognuno, esattamente come il programma originale."""
+        async with self._write_lock:
+            for i, b in enumerate(data):
+                if not await self._send_wait(p.build_write_byte(addr + i, b), "_write_waiter"):
+                    _LOGGER.error("Scrittura 0x%04x non confermata dal centralino", addr + i)
+                    return False
+                if not await self._send_wait(p.build_commit(), "_commit_waiter"):
+                    _LOGGER.error("Conferma scrittura 0x%04x non ricevuta", addr + i)
+                    return False
+            return True
+
+    async def read_forwarding(self) -> dict[int, dict] | None:
+        mem: dict[int, int] = {}
+        for page in p.FWD_PAGES:
+            data = await self.read_memory(page)
+            if data is None:
+                return None
+            for i, b in enumerate(data):
+                mem[page + i] = b
+        out: dict[int, dict] = {}
+        for port in range(1, self.num_ext + 1):
+            mode_byte = mem[p.FWD_MODE_ADDR + port - 1]
+            code = mode_byte >> 5
+            dest = mem[p.FWD_DEST_ADDR + port - 1] + 1
+            base = p.FWD_NUM_ADDR + (port - 1) * 16
+            entry = bytes(mem[base + i] for i in range(16))
+            number = p.decode_digits(entry[1:], entry[0]) if 0 < entry[0] <= 30 else ""
+            out[port] = {
+                "port": port,
+                "extension": self.extensions.get(port, str(port)),
+                "mode_code": code,
+                "mode": p.FWD_MODES.get(code, f"sconosciuta_{code}"),
+                "mode_byte": mode_byte,
+                "target_port": dest,
+                "target": self.extensions.get(dest, str(dest)) if code in (1, 2) else None,
+                "number": number or None,
+            }
+        self.forwarding = out
+        return out
+
+    async def set_forwarding(self, port: int, code: int, target_port: int | None = None,
+                             number: str | None = None) -> bool:
+        """Imposta la deviazione di un interno. code: 0, 1, 2, 5, 6 (vedi protocol.FWD_MODES)."""
+        if code not in p.FWD_MODES or not 1 <= port <= self.num_ext:
+            raise ValueError("porta o modalità non valida")
+        current = await self.read_forwarding()
+        if current is None:
+            return False
+        if code in (1, 2):
+            if not target_port or not 1 <= target_port <= self.num_ext or target_port == port:
+                raise ValueError("interno di destinazione non valido")
+            if not await self.write_bytes(p.FWD_DEST_ADDR + port - 1, bytes([target_port - 1])):
+                return False
+        if code in (5, 6):
+            if not number or not number.isdigit():
+                raise ValueError("numero esterno non valido")
+            if not await self.write_bytes(p.FWD_NUM_ADDR + (port - 1) * 16, p.encode_number(number)):
+                return False
+        new_mode = (code << 5) | (current[port]["mode_byte"] & 0x1F)
+        if not await self.write_bytes(p.FWD_MODE_ADDR + port - 1, bytes([new_mode])):
+            return False
+        await self.read_forwarding()
         return True
 
     # ------------------------------------------------------------ ricezione
@@ -248,7 +333,9 @@ class PbxClient:
             self._finalize(item[0])
 
     def _on_bill(self, m: p.Message) -> None:
-        self.send(p.build_bill_ack(m.trunk_raw))
+        self.send(p.build_bill_ack(m.address))
+        if not m.start or m.start[0] == 0:
+            return  # record vuoto/di servizio
         now = time.monotonic()
         self._seen_bills = {k: t for k, t in self._seen_bills.items() if now - t < 120}
         if m.raw in self._seen_bills:  # ripetizione dello stesso riepilogo
@@ -309,6 +396,12 @@ class PbxClient:
         if k == "clock_ack":
             if self._clock_waiter and not self._clock_waiter.done():
                 self._clock_waiter.set_result(True)
+        elif k == "write_ack":
+            if self._write_waiter and not self._write_waiter.done():
+                self._write_waiter.set_result(True)
+        elif k == "commit_ack":
+            if self._commit_waiter and not self._commit_waiter.done():
+                self._commit_waiter.set_result(True)
         elif k == "memory":
             fut = self._pending.get(m.address)
             if fut and not fut.done():

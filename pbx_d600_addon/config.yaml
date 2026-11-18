@@ -1,5 +1,5 @@
 name: PBX D600
-version: "1.0.1"
+version: "1.1.0"
 slug: pbx_d600
 description: Centralino PBX D600 - stato linee e interni, registro chiamate, rubrica
 url: https://github.com/stepsolar/ha-pbx-d600

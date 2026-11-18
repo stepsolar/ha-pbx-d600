@@ -13,6 +13,15 @@ from pathlib import Path
 
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
+FWD_LABELS = {
+    0: "Non trasferire",
+    1: "Inoltra all'interno",
+    2: "Trasferimento all'interno se occupato",
+    5: "Trasferimento alla linea esterna",
+    6: "Trasferimento linea esterna se occupato",
+}
+FWD_KEYS = {"nessuna": 0, "interno": 1, "interno_occupato": 2, "esterno": 5, "esterno_occupato": 6}
+
 from pbxcore import protocol as p
 from pbxcore.client import PbxClient
 
@@ -22,7 +31,7 @@ _LOGGER = logging.getLogger("pbx_d600")
 DATA = Path(os.environ.get("PBX_DATA", "/data"))
 WEB = Path(__file__).parent / "web"
 PORT = int(os.environ.get("PBX_WEB_PORT", "8099"))
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 
 def load_options() -> dict:
@@ -165,6 +174,31 @@ class HaBridge:
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("HA non raggiungibile: %s", err)
 
+    async def listen(self, event_type: str, handler) -> None:
+        """Ascolta un evento di Home Assistant (per comandare l'add-on dalle automazioni)."""
+        if not self.session:
+            return
+        while True:
+            try:
+                async with self.session.ws_connect("http://supervisor/core/websocket", heartbeat=30) as ws:
+                    await ws.receive_json()  # auth_required
+                    await ws.send_json({"type": "auth", "access_token": self.token})
+                    if (await ws.receive_json()).get("type") != "auth_ok":
+                        raise RuntimeError("autenticazione websocket fallita")
+                    await ws.send_json({"id": 1, "type": "subscribe_events", "event_type": event_type})
+                    _LOGGER.info("In ascolto dell'evento %s", event_type)
+                    async for msg in ws:
+                        if msg.type != WSMsgType.TEXT:
+                            continue
+                        data = json.loads(msg.data)
+                        if data.get("type") == "event":
+                            asyncio.create_task(handler(data["event"].get("data", {})))
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Websocket HA: %s", err)
+            await asyncio.sleep(15)
+
     async def event(self, event_type: str, data: dict) -> None:
         if not self.session:
             return
@@ -205,6 +239,7 @@ class App:
                     "name": ext_names.get(c.extensions.get(port, str(port))),
                     "state": c.ext_state[port],
                     "trunk": c.ext_trunk.get(port),
+                    "forwarding": self.fwd_view(port),
                 }
                 for port in sorted(c.ext_state)
             ],
@@ -221,6 +256,19 @@ class App:
                 "number": c.last_cid, "name": contacts.get(c.last_cid or ""), "trunk": c.last_cid_trunk,
                 "time": c.last_cid_time.isoformat(timespec="seconds") if c.last_cid_time else None,
             },
+        }
+
+    def fwd_view(self, port: int) -> dict | None:
+        f = self.client.forwarding.get(port)
+        if not f:
+            return None
+        code = f["mode_code"]
+        return {
+            "code": code,
+            "label": FWD_LABELS.get(code, f"Sconosciuta ({code})"),
+            "target": f["target"],
+            "target_port": f["target_port"],
+            "number": f["number"],
         }
 
     async def broadcast(self, msg: dict) -> None:
@@ -253,7 +301,10 @@ class App:
             await self.ha.state(
                 f"sensor.pbx_d600_interno_{e['number']}", e["state"],
                 {"friendly_name": label, "icon": "mdi:phone-classic", "porta": e["port"],
-                 "numero_interno": e["number"], "nome": e["name"], "linea_esterna": e["trunk"]},
+                 "numero_interno": e["number"], "nome": e["name"], "linea_esterna": e["trunk"],
+                 "deviazione": (e["forwarding"] or {}).get("label"),
+                 "deviazione_verso": ((e["forwarding"] or {}).get("target") if (e["forwarding"] or {}).get("code") in (1, 2)
+                                      else (e["forwarding"] or {}).get("number") if (e["forwarding"] or {}).get("code") in (5, 6) else None)},
             )
         for t in snap["trunks"]:
             await self.ha.state(
@@ -295,7 +346,51 @@ class App:
         """Legge i numeri interni dal centralino (riprova finché risponde)."""
         while not await self.client.load_extension_numbers():
             await asyncio.sleep(30)
+        await self.refresh_forwarding()
+        while True:  # rilettura periodica: le deviazioni si possono cambiare anche dai telefoni (#81/#82)
+            await asyncio.sleep(300)
+            await self.refresh_forwarding()
+
+    async def refresh_forwarding(self) -> None:
+        if await self.client.read_forwarding() is None:
+            _LOGGER.warning("Impossibile leggere le deviazioni dal centralino")
         self._dirty.set()
+
+    async def ha_set_forwarding(self, data: dict) -> None:
+        try:
+            await self.apply_forwarding(data)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Deviazione da Home Assistant non applicata: %s", err)
+            await self.ha.event("pbx_d600_errore", {"errore": str(err), "richiesta": data})
+
+    async def apply_forwarding(self, data: dict) -> dict:
+        """Imposta la deviazione. data: interno (numero) o porta, modalita (codice o chiave), destinazione/numero."""
+        c = self.client
+        ext = str(data.get("interno") or data.get("extension") or "").strip()
+        port = int(data["porta"]) if data.get("porta") else next((p_ for p_, n in c.extensions.items() if n == ext), None)
+        if not port:
+            raise ValueError(f"Interno {ext} non trovato")
+        mode = data.get("modalita", data.get("mode"))
+        code = FWD_KEYS[mode] if isinstance(mode, str) and mode in FWD_KEYS else int(mode)
+        target_port = None
+        number = None
+        if code in (1, 2):
+            dest = str(data.get("destinazione") or data.get("target") or "").strip()
+            target_port = next((p_ for p_, n in c.extensions.items() if n == dest), None)
+            if not target_port:
+                raise ValueError(f"Interno di destinazione {dest} non trovato")
+        if code in (5, 6):
+            number = "".join(ch for ch in str(data.get("numero") or data.get("number") or "") if ch.isdigit())
+            if not number:
+                raise ValueError("Numero esterno mancante")
+        ok = await c.set_forwarding(port, code, target_port=target_port, number=number)
+        if not ok:
+            raise RuntimeError("Il centralino non ha confermato la scrittura")
+        _LOGGER.info("Deviazione interno %s: %s %s", c.extensions.get(port), FWD_LABELS[code], number or (c.extensions.get(target_port) if target_port else ""))
+        self._dirty.set()
+        await self.ha.event("pbx_d600_deviazione", {"interno": c.extensions.get(port), "modalita": FWD_LABELS[code],
+                                                    "destinazione": c.extensions.get(target_port) if target_port else None, "numero": number})
+        return {"ok": True, "forwarding": self.fwd_view(port)}
 
     # ---- web
     @web.middleware
@@ -317,6 +412,8 @@ class App:
             web.post("/api/names", self.h_set_name),
             web.get("/api/diagnostics", self.h_diag),
             web.post("/api/clock", self.h_clock),
+            web.get("/api/forwarding", self.h_fwd_get),
+            web.post("/api/forwarding", self.h_fwd_set),
             web.get("/ws", self.h_ws),
         ])
         return app
@@ -375,6 +472,28 @@ class App:
             "unknown": self.db.unknown(),
         })
 
+    async def h_fwd_get(self, request: web.Request) -> web.Response:
+        if request.query.get("refresh"):
+            await self.client.read_forwarding()
+        return web.json_response({
+            "modes": [{"code": k, "label": v} for k, v in FWD_LABELS.items()],
+            "extensions": [
+                {"port": port, "number": self.client.extensions.get(port, str(port)),
+                 "name": self.db.names("ext").get(self.client.extensions.get(port, str(port))),
+                 "forwarding": self.fwd_view(port)}
+                for port in sorted(self.client.ext_state)
+            ],
+        })
+
+    async def h_fwd_set(self, request: web.Request) -> web.Response:
+        try:
+            return web.json_response(await self.apply_forwarding(await request.json()))
+        except (ValueError, KeyError) as err:
+            return web.json_response({"ok": False, "error": str(err)}, status=400)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Errore impostando la deviazione")
+            return web.json_response({"ok": False, "error": str(err)}, status=500)
+
     async def h_clock(self, request: web.Request) -> web.Response:
         return web.json_response({"ok": await self.client.sync_clock()})
 
@@ -417,6 +536,7 @@ class App:
             asyncio.create_task(self.keep_numbers())
 
         asyncio.create_task(self.publisher())
+        asyncio.create_task(self.ha.listen("pbx_d600_imposta_deviazione", self.ha_set_forwarding))
         self._dirty.set()
         while True:  # aggiornamento periodico (stato collegamento, contatori del giorno)
             await asyncio.sleep(30)

@@ -14,9 +14,40 @@ L'add-on collega Home Assistant direttamente al centralino PBX D600 (UDP, porte 
   - ricerca per numero, nome o interno;
   - intervallo di date;
   - esportazione CSV.
-- **Interni**: nome di ogni interno. La deviazione di chiamata arriverà in una prossima versione.
+- **Interni**: nome di ogni interno e deviazione attiva.
+- **Impostazioni**: deviazione di chiamata per interno, senza alzare la cornetta.
 - **Rubrica**: associa un nome ai numeri, che verrà mostrato nel registro e nelle notifiche.
 - **Diagnostica**: stato del collegamento, sincronizzazione dell'ora e messaggi del centralino non ancora decifrati.
+
+## Deviazione di chiamata
+
+Nella scheda **Impostazioni** scegli:
+1. l'interno;
+2. il tipo di trasferimento;
+3. la destinazione: un interno, oppure un numero di telefono per i trasferimenti verso linea esterna.
+
+Poi premi **Applica**. È lo stesso risultato dei codici `#81…`/`#82…` composti dal telefono, ma la scrittura avviene direttamente nella memoria del centralino.
+
+| Trasferimento | Codice telefono equivalente |
+|---|---|
+| Non trasferire | `#81#` / `#82#` |
+| Inoltra all'interno | `#81 ABCD` |
+| Trasferimento all'interno se occupato | `#82 ABCD` |
+| Trasferimento alla linea esterna | `#81*numero#` |
+| Trasferimento linea esterna se occupato | `#82*numero#` |
+
+Dalle automazioni puoi usare l'evento `pbx_d600_imposta_deviazione`. Il campo `modalita` accetta `nessuna`, `interno`, `interno_occupato`, `esterno` oppure `esterno_occupato`:
+
+```yaml
+actions:
+  - event: pbx_d600_imposta_deviazione
+    event_data:
+      interno: "42"
+      modalita: esterno_occupato
+      numero: "3201936661"
+```
+
+Per una deviazione verso un interno usa `destinazione: "101"` al posto di `numero`. Ad applicazione avvenuta l'add-on emette l'evento `pbx_d600_deviazione`; in caso di errore emette `pbx_d600_errore`.
 
 ## Configurazione
 

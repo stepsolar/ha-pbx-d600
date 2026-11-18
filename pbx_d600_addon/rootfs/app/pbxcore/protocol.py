@@ -18,10 +18,18 @@ Comandi conosciuti
   PBX -> PC   08 T 01 N <cifre BCD>    caller ID su linea T (N cifre)
   PC  -> PBX  08 T                     ack caller ID
   PBX -> PC   19 T                     linea T impegnata da un interno (chiamata in uscita)
-  PBX -> PC   01 T xx P D MM GG hh mm  dh dm ds <8 byte cifre> <3 byte>
-                                       riepilogo/addebito di fine chiamata (BCD);
+  PBX -> PC   01 IH IL P T MM GG hh mm dh dm ds <8 byte cifre> <3 byte>
+                                       riepilogo/addebito di fine chiamata (BCD), indice IH:IL;
                                        ripetuto finché non arriva l'ack
-  PC  -> PBX  01 T                     ack riepilogo (dedotto per analogia con 08 T)
+  PC  -> PBX  04 01 IH IL              ack riepilogo (4 byte, senza checksum: copiato dal programma)
+  PC  -> PBX  04 00 AH AL 01 VV        scrive 1 byte VV all'indirizzo AH:AL; risposta 04 00 00
+  PC  -> PBX  07 08 03 00              conferma/applica le scritture; risposta 06 08 03 00
+
+Memoria (deviazioni, porta P = 1..32):
+  0x2280+P-1  modalità: bit 7-5 = 0 nessuna, 1 inoltra a interno, 2 a interno se occupato,
+              5 a linea esterna, 6 a linea esterna se occupato (bit 4-0 da preservare)
+  0x2380+P-1  porta di destinazione (0-based) per le modalità 1-2
+  0x2480+(P-1)*16  numero esterno: [n. cifre][cifre BCD nibble invertiti, 0xD riempimento]
 
 Le linee esterne nei messaggi partono da 0 (T=0 -> linea 1); le porte interni da 1.
 """
@@ -41,6 +49,14 @@ CMD_TRUNK_FREE = 0x18
 CMD_CONNECT = 0x80
 CMD_TRUNK_SEIZE = 0x19
 CMD_BILL = 0x01
+CMD_COMMIT = 0x07
+CMD_COMMIT_ACK = 0x06
+
+FWD_MODE_ADDR = 0x2280
+FWD_DEST_ADDR = 0x2380
+FWD_NUM_ADDR = 0x2480
+FWD_PAGES = (0x2220, 0x2320, 0x2420, 0x24A0, 0x2520, 0x25A0, 0x2620)
+FWD_MODES = {0: "nessuna", 1: "interno", 2: "interno_occupato", 5: "esterno", 6: "esterno_occupato"}
 
 # Tabella numeri interni: 4 byte per porta, a partire da 0x0300
 EXT_TABLE_ADDR = 0x0300
@@ -72,8 +88,31 @@ def build_cid_ack(trunk_raw: int) -> bytes:
     return build(bytes([CMD_CID, trunk_raw]))
 
 
-def build_bill_ack(trunk_raw: int) -> bytes:
-    return build(bytes([CMD_BILL, trunk_raw]))
+def build_bill_ack(index: int) -> bytes:
+    # il programma originale invia 4 byte senza checksum: 04 01 IH IL
+    return bytes([0x04, CMD_BILL, (index >> 8) & 0xFF, index & 0xFF])
+
+
+def build_write_byte(addr: int, value: int) -> bytes:
+    return build(bytes([CMD_READ, 0x00, (addr >> 8) & 0xFF, addr & 0xFF, 0x01, value & 0xFF]))
+
+
+def build_commit() -> bytes:
+    return build(bytes([CMD_COMMIT, 0x08, 0x03, 0x00]))
+
+
+def encode_number(number: str) -> bytes:
+    """Numero esterno nel formato della tabella deviazioni (16 byte)."""
+    digits = [int(c) for c in number]
+    if not 1 <= len(digits) <= 30:
+        raise ValueError("numero non valido")
+    out = bytearray([len(digits)])
+    for i in range(0, len(digits), 2):
+        lo = digits[i]
+        hi = digits[i + 1] if i + 1 < len(digits) else 0x0D
+        out.append((hi << 4) | lo)
+    out += b"\xdd" * (16 - len(out))
+    return bytes(out)
 
 
 def bcd(b: int) -> int:
@@ -131,6 +170,10 @@ def parse(frame: bytes) -> Message:
         return Message("clock_ack", frame)
     if cmd == CMD_READ and len(args) >= 4:
         return Message("memory", frame, address=(args[1] << 8) | args[2], data=bytes(args[4:]))
+    if cmd == CMD_READ and len(args) == 2:
+        return Message("write_ack", frame)
+    if cmd == CMD_COMMIT_ACK:
+        return Message("commit_ack", frame)
     if cmd == CMD_OFFHOOK and args:
         return Message("off_hook", frame, port=args[0])
     if cmd == CMD_ONHOOK and args:
@@ -152,15 +195,16 @@ def parse(frame: bytes) -> Message:
             number=decode_digits(args[3:], args[2]),
         )
     if cmd == CMD_BILL and len(args) >= 19:
-        # 0 linea | 1 ? (contatore?) | 2 porta interno | 3 direzione? |
-        # 4-7 MM GG hh mm | 8-10 durata hh mm ss | 11-18 numero | 19.. ?
-        return Message(
-            "call_record", frame, trunk=args[0] + 1, trunk_raw=args[0], port=args[2],
-            direction=args[3],
+        # 0-1 indice | 2 porta interno | 3 linea (da 0) | 4-7 MM GG hh mm |
+        # 8-10 durata hh mm ss | 11-18 numero | 19.. ?
+        m = Message(
+            "call_record", frame, trunk=args[3] + 1, trunk_raw=args[3], port=args[2],
             start=(bcd(args[4]), bcd(args[5]), bcd(args[6]), bcd(args[7])),
             duration=bcd(args[8]) * 3600 + bcd(args[9]) * 60 + bcd(args[10]),
             number=decode_digits(args[11:19]),
         )
+        m.address = (args[0] << 8) | args[1]  # indice del riepilogo, serve per l'ack
+        return m
     return Message("unknown", frame)
 
 
