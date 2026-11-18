@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
@@ -43,19 +43,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: PbxConfigEntry) -> bool:
     try:
         await client.start()
     except OSError as err:
-        raise HomeAssistantError(
-            f"Impossibile aprire la porta UDP {cfg[CONF_LOCAL_PORT]}: {err}"
+        # HA riprova da solo: utile se la porta si sta ancora liberando
+        raise ConfigEntryNotReady(
+            f"Porta UDP {cfg[CONF_LOCAL_PORT]} non disponibile: {err}"
         ) from err
 
+    try:
+        return await _setup(hass, entry, client)
+    except Exception:
+        await client.stop()
+        raise
+
+
+async def _setup(hass: HomeAssistant, entry: PbxConfigEntry, client: PbxClient) -> bool:
     store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.calls")
     saved = await store.async_load() or {}
-    client.calls = saved.get("calls", [])
+    client.calls = saved.get("calls", []) + client.calls
+    client.unknown_frames = saved.get("unknown", []) + client.unknown_frames
+
+    def _save() -> dict:
+        return {"calls": client.calls, "unknown": client.unknown_frames}
 
     def _on_call_ended(call: dict) -> None:
         hass.bus.async_fire(EVENT_CALL, dict(call))
-        store.async_delay_save(lambda: {"calls": client.calls}, 5)
+        store.async_delay_save(_save, 5)
 
     client.on_call_ended = _on_call_ended
+    client.on_unknown = lambda: store.async_delay_save(_save, 5)
 
     if not await client.load_extension_numbers():
         _LOGGER.warning("Impossibile leggere i numeri interni: uso i numeri di porta")
@@ -74,7 +88,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PbxConfigEntry) -> bool:
                 data["number"] = msg.number
             hass.bus.async_fire(EVENT_PBX, data)
             if msg.kind == "unknown":
-                _LOGGER.info("Messaggio PBX non riconosciuto: %s", msg.raw.hex(" "))
+                _LOGGER.warning("Messaggio PBX non riconosciuto: %s", msg.raw.hex(" "))
         async_dispatcher_send(hass, signal)
 
     entry.async_on_unload(client.add_listener(_on_message))
@@ -91,8 +105,8 @@ async def _reload(hass: HomeAssistant, entry: PbxConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: PbxConfigEntry) -> bool:
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if ok:
-        await entry.runtime_data.stop()
+    # la porta UDP va liberata comunque, anche se lo scarico delle piattaforme fallisce
+    await entry.runtime_data.stop()
     return ok
 
 

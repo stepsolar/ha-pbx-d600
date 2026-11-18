@@ -5,6 +5,7 @@ import asyncio
 from collections.abc import Callable
 from datetime import datetime
 import logging
+import socket
 import time
 
 from . import protocol as p
@@ -75,6 +76,7 @@ class PbxClient:
         self._active: dict[int, dict] = {}  # chiamate in corso per linea
         self.unknown_frames: list[str] = []
         self.on_call_ended: Callable[[dict], None] | None = None
+        self.on_unknown: Callable[[], None] | None = None
 
     # ------------------------------------------------------------ lifecycle
     @property
@@ -83,19 +85,30 @@ class PbxClient:
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
-        self._transport, _ = await loop.create_datagram_endpoint(
-            lambda: _Proto(self),
-            local_addr=("0.0.0.0", self.local_port),
-            remote_addr=(self.host, self.port),
-        )
+        # Socket con SO_REUSEADDR: una ricarica dell'integrazione non resta
+        # bloccata dalla porta ancora in chiusura dell'istanza precedente.
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("0.0.0.0", self.local_port))
+            sock.connect((self.host, self.port))
+            sock.setblocking(False)
+        except OSError:
+            sock.close()
+            raise
+        self._transport, _ = await loop.create_datagram_endpoint(lambda: _Proto(self), sock=sock)
         self._hb_task = loop.create_task(self._heartbeat())
 
     async def stop(self) -> None:
         if self._hb_task:
             self._hb_task.cancel()
+            self._hb_task = None
         if self._transport:
             self._transport.close()
         self._transport = None
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.cancel()
 
     def add_listener(self, cb: Callable[[p.Message], None]) -> Callable[[], None]:
         self._listeners.append(cb)
@@ -230,7 +243,9 @@ class PbxClient:
             self._call_end(m.trunk)
         elif k == "unknown":
             self.unknown_frames.insert(0, f"{self._now().isoformat(timespec='seconds')} {m.raw.hex(' ')}")
-            del self.unknown_frames[30:]
+            del self.unknown_frames[100:]
+            if self.on_unknown:
+                self.on_unknown()
 
     def _apply(self, m: p.Message) -> None:
         self._track_calls(m)
