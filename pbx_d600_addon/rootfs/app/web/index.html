@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centralino PBX D600</title>
+<style>
+  :root {
+    --bg: #f3f4f7; --card: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec; --soft: #f0f2f6;
+    --accent: #0a84d6; --ok: #2e9d57; --warn: #e48a12; --bad: #d64545; --ring: #0a84d6; --idle: #9aa1b0;
+    --radius: 14px; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111418; --card:#1b1f26; --text:#e7eaf0; --muted:#98a0b0; --line:#2b313b; --soft:#232832; --idle:#6c7383;
+            --shadow: 0 1px 2px rgba(0,0,0,.4); }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--card); border-bottom:1px solid var(--line); }
+  .bar { max-width:1280px; margin:auto; padding:12px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:650; font-size:17px; }
+  .brand svg { color: var(--accent); }
+  nav { display:flex; gap:4px; flex-wrap:wrap; margin-left:8px; }
+  nav button { border:0; background:none; color:var(--muted); font:inherit; font-weight:550; padding:8px 12px; border-radius:10px; cursor:pointer; }
+  nav button.sel { background:var(--soft); color:var(--text); }
+  .pill { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; padding:5px 12px; border-radius:999px; }
+  .pill i { width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .pill.on { color:var(--ok); background:color-mix(in srgb, var(--ok) 13%, transparent); }
+  .pill.off { color:var(--bad); background:color-mix(in srgb, var(--bad) 13%, transparent); }
+  main { max-width:1280px; margin:auto; padding:20px; }
+  .view { display:none; } .view.show { display:block; }
+  .card { background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; margin-bottom:18px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; font-weight:650; display:flex; align-items:center; gap:8px; }
+  h2 small { text-transform:none; letter-spacing:0; font-weight:500; }
+  .grid2 { display:grid; grid-template-columns: 1.15fr 1fr; gap:18px; }
+  @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
+  @media (max-width: 720px) { .stats { grid-template-columns:repeat(2,1fr); } }
+  .stat { background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px 16px; display:flex; gap:12px; align-items:center; }
+  .stat .ic { width:42px; height:42px; border-radius:12px; display:grid; place-items:center; color:var(--c); background:color-mix(in srgb, var(--c) 14%, transparent); }
+  .stat b { font-size:24px; display:block; line-height:1.1; }
+  .stat span { color:var(--muted); font-size:12.5px; }
+
+  .trunks { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:10px; }
+  .trunk { border-radius:12px; padding:12px; border:1px solid color-mix(in srgb, var(--c) 40%, var(--line)); background:color-mix(in srgb, var(--c) 8%, transparent); }
+  .trunk .t1 { display:flex; align-items:center; justify-content:space-between; font-weight:650; }
+  .trunk .t1 svg { color:var(--c); }
+  .trunk .t2 { color:var(--muted); font-size:13px; margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .trunk .t2 b { color:var(--text); }
+  .exts { display:grid; grid-template-columns:repeat(auto-fill, minmax(86px,1fr)); gap:8px; }
+  .ext { border-radius:10px; padding:8px 10px; background:var(--soft); color:var(--muted); display:flex; flex-direction:column; gap:1px; min-height:52px; }
+  .ext .n { font-weight:650; color:var(--text); display:flex; align-items:center; gap:6px; }
+  .ext .n i { width:8px; height:8px; border-radius:50%; background:var(--c); flex:none; }
+  .ext .s { font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ext.act { background:color-mix(in srgb, var(--c) 14%, transparent); }
+  .ring { animation: ring 1.1s ease-in-out infinite; }
+  @keyframes ring { 0%,100% { box-shadow:0 0 0 0 color-mix(in srgb, var(--c) 55%, transparent); } 50% { box-shadow:0 0 0 6px transparent; } }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:12px; margin-top:10px; }
+  .legend span { display:flex; align-items:center; gap:6px; } .legend i { width:8px; height:8px; border-radius:50%; background:var(--c); }
+
+  .calls { display:flex; flex-direction:column; }
+  .call { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; padding:10px 2px; border-bottom:1px solid var(--line); }
+  .call:last-child { border-bottom:0; }
+  .cic { width:36px; height:36px; border-radius:50%; display:grid; place-items:center; color:var(--c); background:color-mix(in srgb, var(--c) 14%, transparent); }
+  .cn { font-weight:600; } .cn small { font-weight:500; color:var(--muted); margin-left:6px; }
+  .cs { color:var(--muted); font-size:12.5px; }
+  .cr { text-align:right; font-size:13px; } .cr div:last-child { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .empty { color:var(--muted); text-align:center; padding:24px; }
+
+  .filters { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  .seg { display:flex; background:var(--soft); border-radius:10px; padding:3px; }
+  .seg button { border:0; background:none; font:inherit; color:var(--muted); padding:6px 12px; border-radius:8px; cursor:pointer; font-weight:550; }
+  .seg button.sel { background:var(--card); color:var(--text); box-shadow:var(--shadow); }
+  input, select { font:inherit; color:var(--text); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:7px 10px; }
+  .btn { font:inherit; font-weight:600; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:10px; padding:7px 12px; cursor:pointer; text-decoration:none; display:inline-flex; gap:6px; align-items:center; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:650; padding:8px; border-bottom:1px solid var(--line); }
+  td { padding:9px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr:last-child td { border-bottom:0; }
+  .tag { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--c); }
+  .tag i { width:8px; height:8px; border-radius:50%; background:var(--c); }
+  .muted { color:var(--muted); }
+  .pager { display:flex; justify-content:space-between; align-items:center; margin-top:12px; color:var(--muted); }
+  .note { background:color-mix(in srgb, var(--accent) 9%, transparent); border-radius:10px; padding:10px 12px; color:var(--text); font-size:13px; margin-bottom:12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12.5px; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--text); color:var(--card); padding:10px 16px; border-radius:10px; opacity:0; transition:.2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+  a.num { color:inherit; text-decoration:none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Centralino PBX D600</div>
+    <nav>
+      <button data-view="home" class="sel">Panoramica</button>
+      <button data-view="log">Registro chiamate</button>
+      <button data-view="ext">Interni</button>
+      <button data-view="book">Rubrica</button>
+      <button data-view="diag">Diagnostica</button>
+    </nav>
+    <div id="pill" class="pill off"><i></i><span>Collegamento…</span></div>
+  </div>
+</header>
+
+<main>
+  <!-- PANORAMICA -->
+  <section class="view show" id="v-home">
+    <div class="stats" id="stats"></div>
+    <div class="grid2">
+      <div>
+        <div class="card"><h2>Linee esterne</h2><div class="trunks" id="trunks"></div></div>
+        <div class="card"><h2>Interni <small class="muted" id="ext-count"></small></h2><div class="exts" id="exts"></div>
+          <div class="legend">
+            <span style="--c:var(--idle)"><i></i>Libero</span><span style="--c:var(--warn)"><i></i>Sganciato</span>
+            <span style="--c:var(--ring)"><i></i>Squilla</span><span style="--c:var(--ok)"><i></i>In linea esterna</span>
+          </div>
+        </div>
+      </div>
+      <div class="card"><h2>Ultime chiamate</h2><div class="calls" id="recent"></div>
+        <div style="margin-top:10px"><button class="btn" data-goto="log">Apri il registro completo →</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REGISTRO -->
+  <section class="view" id="v-log">
+    <div class="card">
+      <div class="filters">
+        <div class="seg" id="f-esito">
+          <button data-v="" class="sel">Tutte</button><button data-v="risposta">Ricevute</button>
+          <button data-v="persa">Perse</button><button data-v="effettuata">Effettuate</button>
+        </div>
+        <input id="f-q" type="search" placeholder="Cerca numero, nome o interno" style="min-width:220px">
+        <label class="muted">Dal <input id="f-from" type="date"></label>
+        <label class="muted">al <input id="f-to" type="date"></label>
+        <a class="btn" id="csv" href="#">Esporta CSV</a>
+      </div>
+      <table>
+        <thead><tr><th></th><th>Numero</th><th>Interno</th><th>Linea</th><th>Data e ora</th><th style="text-align:right">Durata</th></tr></thead>
+        <tbody id="log-rows"></tbody>
+      </table>
+      <div class="pager"><span id="log-info"></span><span><button class="btn" id="prev">← Precedenti</button> <button class="btn" id="next">Successive →</button></span></div>
+    </div>
+  </section>
+
+  <!-- INTERNI -->
+  <section class="view" id="v-ext">
+    <div class="card">
+      <div class="note">Dai un nome agli interni: comparirà nella plancia, nel registro e nelle entità di Home Assistant.
+        La <b>deviazione di chiamata</b> per interno sarà attivabile da qui appena decifrato il comando di scrittura del centralino.</div>
+      <table>
+        <thead><tr><th>Porta</th><th>Interno</th><th>Nome</th><th>Stato</th><th>Deviazione</th></tr></thead>
+        <tbody id="ext-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RUBRICA -->
+  <section class="view" id="v-book">
+    <div class="card">
+      <h2>Aggiungi contatto</h2>
+      <div class="filters">
+        <input id="b-num" placeholder="Numero (es. 3201936661)">
+        <input id="b-name" placeholder="Nome (es. Mario Rossi)" style="min-width:240px">
+        <button class="btn primary" id="b-add">Salva</button>
+      </div>
+      <h2 style="margin-top:18px">Contatti</h2>
+      <table><thead><tr><th>Numero</th><th>Nome</th><th></th></tr></thead><tbody id="book-rows"></tbody></table>
+    </div>
+  </section>
+
+  <!-- DIAGNOSTICA -->
+  <section class="view" id="v-diag">
+    <div class="card"><h2>Collegamento</h2><div id="diag-info"></div>
+      <div style="margin-top:12px"><button class="btn" id="clock">Sincronizza ora del centralino</button></div></div>
+    <div class="card"><h2>Messaggi non riconosciuti</h2>
+      <div class="note">Messaggi del centralino non ancora decifrati: servono per aggiungere nuove funzioni.</div>
+      <table><thead><tr><th>Ora</th><th>Contenuto</th></tr></thead><tbody id="unk-rows"></tbody></table></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const I = {
+  in: '<path d="M16 2v6h6"/><path d="m22 2-6 6"/>',
+  out: '<path d="M16 8V2h6"/><path d="m16 8 6-6"/>',
+  miss: '<path d="m16 2 6 6"/><path d="m22 2-6 6"/>',
+  talk: '<path d="M14.05 2a9 9 0 0 1 8 7.94"/><path d="M14.05 6A5 5 0 0 1 18 10"/>',
+  ring: '<path d="M18 2.5c1.5 1 2.5 2.5 3 4.5"/><path d="M15.5 5c.8.5 1.4 1.3 1.6 2.3"/>',
+  none: '',
+};
+const PHONE = 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z';
+const icon = (k, s = 18) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${PHONE}"/>${I[k] || ''}</svg>`;
+
+const EXT = { libero:['Libero','var(--idle)'], sganciato:['Sganciato','var(--warn)'], squilla:['Squilla','var(--ring)'], in_linea_esterna:['In linea esterna','var(--ok)'] };
+const TRK = { libera:['Libera','var(--idle)','none'], squilla:['Squilla','var(--ring)','ring'], occupata:['In uso','var(--ok)','talk'] };
+const CALL = { risposta:['Ricevuta','var(--ok)','in'], persa:['Persa','var(--bad)','miss'], effettuata:['Effettuata','var(--accent)','out'], 'non risposta':['Non risposta','var(--warn)','out'] };
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dur = s => { s = +s || 0; const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return s ? (h ? `${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}` : `${m}:${String(x).padStart(2,'0')}`) : '—'; };
+const when = iso => { if (!iso) return ''; const d = new Date(iso), n = new Date(), y = new Date(); y.setDate(n.getDate()-1);
+  const t = d.toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit'});
+  if (d.toDateString() === n.toDateString()) return `Oggi ${t}`; if (d.toDateString() === y.toDateString()) return `Ieri ${t}`;
+  return d.toLocaleDateString('it-IT', {day:'2-digit', month:'2-digit', year:'2-digit'}) + ' ' + t; };
+const api = (p, o) => fetch(p, o).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 1800); };
+
+let S = null, names = { ext:{}, contact:{} };
+
+// ---------- navigazione
+function go(v) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('sel', b.dataset.view === v));
+  document.querySelectorAll('.view').forEach(s => s.classList.toggle('show', s.id === 'v-' + v));
+  if (v === 'log') loadLog(); if (v === 'book') loadBook(); if (v === 'diag') loadDiag(); if (v === 'ext') renderExtTable();
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => go(b.dataset.view));
+document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => go(b.dataset.goto));
+
+// ---------- panoramica
+function renderState() {
+  if (!S) return;
+  const pill = document.getElementById('pill');
+  pill.className = 'pill ' + (S.connected ? 'on' : 'off');
+  pill.querySelector('span').textContent = S.connected ? 'Collegato' : (S.host ? 'Non collegato' : 'IP non configurato');
+  const inUse = S.trunks.filter(t => t.state !== 'libera').length;
+  document.getElementById('stats').innerHTML = [
+    ['in','var(--ok)',S.today.risposta,'Ricevute oggi'], ['miss','var(--bad)',S.today.persa,'Perse oggi'],
+    ['out','var(--accent)',S.today.effettuata,'Effettuate oggi'], ['talk','var(--ring)',`${inUse}/${S.trunks.length}`,'Linee in uso'],
+  ].map(([i,c,v,l]) => `<div class="stat" style="--c:${c}"><div class="ic">${icon(i,22)}</div><div><b>${v}</b><span>${l}</span></div></div>`).join('');
+
+  document.getElementById('trunks').innerHTML = S.trunks.map(t => { const [l,c,i] = TRK[t.state] || TRK.libera;
+    const who = t.caller ? `<b>${esc(t.caller_name || t.caller)}</b>${t.caller_name ? ' · ' + esc(t.caller) : ''}` : l;
+    return `<div class="trunk ${t.state==='squilla'?'ring':''}" style="--c:${c}"><div class="t1">Linea ${t.trunk} ${icon(i)}</div><div class="t2">${who}</div></div>`; }).join('');
+
+  const act = S.extensions.filter(e => e.state !== 'libero').length;
+  document.getElementById('ext-count').textContent = `${act} attivi su ${S.extensions.length}`;
+  document.getElementById('exts').innerHTML = S.extensions.map(e => { const [l,c] = EXT[e.state] || EXT.libero;
+    const sub = e.state === 'in_linea_esterna' && e.trunk ? `Linea ${e.trunk}` : (e.name || l);
+    return `<div class="ext ${e.state!=='libero'?'act':''} ${e.state==='squilla'?'ring':''}" style="--c:${c}" title="Porta ${e.port} · ${esc(l)}"><div class="n"><i></i>${esc(e.number)}</div><div class="s">${esc(sub)}</div></div>`; }).join('');
+  if (document.getElementById('v-ext').classList.contains('show')) renderExtTable();
+}
+
+function callRow(c) {
+  const [l,col,i] = CALL[c.esito] || CALL.effettuata;
+  const num = c.numero ? `<a class="num" href="tel:${esc(c.numero)}">${esc(c.nome || c.numero)}</a>${c.nome ? `<small>${esc(c.numero)}</small>` : ''}` : '<span class="muted">Numero sconosciuto</span>';
+  const sub = [c.interno ? `Int. ${esc(c.interno)}${c.nome_interno ? ' ' + esc(c.nome_interno) : ''}` : null, c.linea ? `Linea ${c.linea}` : null, l].filter(Boolean).join(' · ');
+  return `<div class="call"><div class="cic" style="--c:${col}">${icon(i)}</div><div><div class="cn">${num}</div><div class="cs">${sub}</div></div><div class="cr"><div>${esc(when(c.inizio))}</div><div>${dur(c.durata)}</div></div></div>`;
+}
+async function loadRecent() {
+  const r = await api('api/calls?limit=12');
+  document.getElementById('recent').innerHTML = r.calls.length ? r.calls.map(callRow).join('') : '<div class="empty">Ancora nessuna chiamata registrata.</div>';
+}
+
+// ---------- registro
+const L = { esito:'', q:'', from:'', to:'', offset:0, limit:50 };
+function qs() { const p = new URLSearchParams(); for (const k of ['esito','q','from','to']) if (L[k]) p.set(k, L[k]); return p; }
+async function loadLog() {
+  const p = qs(); p.set('limit', L.limit); p.set('offset', L.offset);
+  const r = await api('api/calls?' + p);
+  document.getElementById('log-rows').innerHTML = r.calls.length ? r.calls.map(c => { const [l,col,i] = CALL[c.esito] || CALL.effettuata;
+    return `<tr><td><span class="tag" style="--c:${col}">${icon(i,16)} ${l}</span></td>
+      <td>${c.numero ? `<a class="num" href="tel:${esc(c.numero)}"><b>${esc(c.nome || c.numero)}</b></a>${c.nome ? ` <span class="muted">${esc(c.numero)}</span>` : ''}` : '<span class="muted">sconosciuto</span>'}</td>
+      <td>${esc(c.interno || '—')}${c.nome_interno ? ` <span class="muted">${esc(c.nome_interno)}</span>` : ''}</td><td>${c.linea ?? ''}</td>
+      <td>${esc(new Date(c.inizio).toLocaleString('it-IT', {dateStyle:'short', timeStyle:'short'}))}</td><td style="text-align:right" class="mono">${dur(c.durata)}</td></tr>`; }).join('')
+    : '<tr><td colspan="6" class="empty">Nessuna chiamata trovata.</td></tr>';
+  document.getElementById('log-info').textContent = r.total ? `${L.offset + 1}–${Math.min(L.offset + L.limit, r.total)} di ${r.total}` : '';
+  document.getElementById('prev').disabled = L.offset === 0;
+  document.getElementById('next').disabled = L.offset + L.limit >= r.total;
+  document.getElementById('csv').href = 'api/calls.csv?' + qs();
+}
+document.querySelectorAll('#f-esito button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#f-esito button').forEach(x => x.classList.toggle('sel', x === b)); L.esito = b.dataset.v; L.offset = 0; loadLog(); });
+let qt; document.getElementById('f-q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { L.q = e.target.value.trim(); L.offset = 0; loadLog(); }, 250); };
+document.getElementById('f-from').onchange = e => { L.from = e.target.value; L.offset = 0; loadLog(); };
+document.getElementById('f-to').onchange = e => { L.to = e.target.value; L.offset = 0; loadLog(); };
+document.getElementById('prev').onclick = () => { L.offset = Math.max(0, L.offset - L.limit); loadLog(); };
+document.getElementById('next').onclick = () => { L.offset += L.limit; loadLog(); };
+
+// ---------- interni
+async function saveName(kind, key, name) { await api('api/names', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ kind, key, name }) }); names[kind][key] = name; toast('Salvato'); }
+function renderExtTable() {
+  if (!S) return;
+  const tb = document.getElementById('ext-rows');
+  const focused = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.ext;
+  if (focused) return; // non ridisegnare mentre si scrive
+  tb.innerHTML = S.extensions.map(e => { const [l,c] = EXT[e.state] || EXT.libero;
+    return `<tr><td class="muted">${e.port}</td><td><b>${esc(e.number)}</b></td>
+      <td><input data-ext="${esc(e.number)}" value="${esc(e.name || '')}" placeholder="Es. Reception"></td>
+      <td><span class="tag" style="--c:${c}"><i></i>${l}</span></td>
+      <td><button class="btn" disabled title="In arrivo">Imposta deviazione</button></td></tr>`; }).join('');
+  tb.querySelectorAll('input[data-ext]').forEach(inp => inp.onchange = () => saveName('ext', inp.dataset.ext, inp.value));
+}
+
+// ---------- rubrica
+async function loadBook() {
+  names = await api('api/names');
+  const rows = Object.entries(names.contact).sort((a,b) => a[1].localeCompare(b[1], 'it'));
+  document.getElementById('book-rows').innerHTML = rows.length ? rows.map(([k,v]) =>
+    `<tr><td class="mono">${esc(k)}</td><td><b>${esc(v)}</b></td><td style="text-align:right"><button class="btn" data-del="${esc(k)}">Elimina</button></td></tr>`).join('')
+    : '<tr><td colspan="3" class="empty">Nessun contatto. I nomi compariranno nel registro al posto dei numeri.</td></tr>';
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { await saveName('contact', b.dataset.del, ''); loadBook(); });
+}
+document.getElementById('b-add').onclick = async () => {
+  const k = document.getElementById('b-num').value.replace(/\s+/g, ''), v = document.getElementById('b-name').value.trim();
+  if (!k || !v) return toast('Inserisci numero e nome');
+  await saveName('contact', k, v); document.getElementById('b-num').value = ''; document.getElementById('b-name').value = ''; loadBook(); loadRecent();
+};
+
+// ---------- diagnostica
+async function loadDiag() {
+  const d = await api('api/diagnostics');
+  document.getElementById('diag-info').innerHTML = `<table>
+    <tr><td class="muted">Stato</td><td><b style="color:${d.connected ? 'var(--ok)' : 'var(--bad)'}">${d.connected ? 'Collegato' : 'Non collegato'}</b></td></tr>
+    <tr><td class="muted">Centralino</td><td class="mono">${esc(d.host || '—')}:${d.port}</td></tr>
+    <tr><td class="muted">Porta locale</td><td class="mono">${d.local_port}</td></tr>
+    <tr><td class="muted">Entità Home Assistant</td><td>${d.ha_entities ? 'Attive' : 'Disattivate'}</td></tr>
+    <tr><td class="muted">Versione add-on</td><td>${esc(d.version)}</td></tr></table>`;
+  document.getElementById('unk-rows').innerHTML = d.unknown.length ? d.unknown.map(u => `<tr><td class="muted">${esc(u.ts.replace('T',' '))}</td><td class="mono">${esc(u.raw)}</td></tr>`).join('')
+    : '<tr><td colspan="2" class="empty">Nessuno.</td></tr>';
+}
+document.getElementById('clock').onclick = async () => { const r = await api('api/clock', { method:'POST' }); toast(r.ok ? 'Ora sincronizzata' : 'Il centralino non risponde'); };
+
+// ---------- tempo reale
+function connect() {
+  const u = new URL('ws', location.href); u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(u);
+  ws.onmessage = ev => { const m = JSON.parse(ev.data);
+    if (m.type === 'state') { S = m.data; renderState(); }
+    if (m.type === 'call') { loadRecent(); if (document.getElementById('v-log').classList.contains('show')) loadLog(); } };
+  ws.onclose = () => setTimeout(connect, 3000);
+}
+async function refresh() { try { S = await api('api/state'); renderState(); } catch (e) {} }
+api('api/names').then(n => names = n).catch(() => {});
+refresh(); loadRecent(); connect();
+setInterval(refresh, 30000); // riserva se il websocket cade
+</script>
+</body>
+</html>

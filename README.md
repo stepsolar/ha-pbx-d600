@@ -1,5 +1,10 @@
 # PBX D600 per Home Assistant
 
+Questo repository contiene due modi per collegare il centralino a Home Assistant. **Usane uno solo**: entrambi usano la porta UDP 50000.
+
+- **Add-on con plancia (consigliato)**: si aggiunge da Impostazioni → Componenti aggiuntivi → Store → ⋮ → *Repository* → `https://github.com/stepsolar/ha-pbx-d600`. Installa poi "PBX D600". Aggiunge la voce **Centralino** nella barra laterale, con registro chiamate, rubrica e nomi degli interni. Vedi [la documentazione dell'add-on](pbx_d600_addon/DOCS.md).
+- **Integrazione (HACS)**: descritta qui sotto.
+
 Integrazione per il centralino gestito dal programma "PBX D600" (modello D832-L: 8 linee esterne, 32 interni). Home Assistant comunica **direttamente col centralino via UDP**, senza il PC.
 
 ## Cosa fa (versione 0.1)

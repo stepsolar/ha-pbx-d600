@@ -1,0 +1,16 @@
+configuration:
+  host:
+    name: Indirizzo IP del centralino
+    description: Es. 192.168.2.239
+  port:
+    name: Porta UDP del centralino
+  local_port:
+    name: Porta UDP locale
+    description: Porta su cui l'add-on riceve gli eventi (come il programma originale, 50000)
+  num_extensions:
+    name: Numero di interni
+  num_trunks:
+    name: Numero di linee esterne
+  publish_entities:
+    name: Crea entità in Home Assistant
+    description: Pubblica sensori di interni, linee e registro chiamate ed emette l'evento pbx_d600_call
