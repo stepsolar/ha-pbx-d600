@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, Supp
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 
 from . import protocol as p
 from .client import PbxClient
@@ -19,6 +20,7 @@ from .const import (
     CONF_NUM_EXT,
     CONF_NUM_TRUNKS,
     DOMAIN,
+    EVENT_CALL,
     EVENT_PBX,
     SIGNAL_UPDATE,
 )
@@ -44,6 +46,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: PbxConfigEntry) -> bool:
         raise HomeAssistantError(
             f"Impossibile aprire la porta UDP {cfg[CONF_LOCAL_PORT]}: {err}"
         ) from err
+
+    store: Store[dict] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.calls")
+    saved = await store.async_load() or {}
+    client.calls = saved.get("calls", [])
+
+    def _on_call_ended(call: dict) -> None:
+        hass.bus.async_fire(EVENT_CALL, dict(call))
+        store.async_delay_save(lambda: {"calls": client.calls}, 5)
+
+    client.on_call_ended = _on_call_ended
 
     if not await client.load_extension_numbers():
         _LOGGER.warning("Impossibile leggere i numeri interni: uso i numeri di porta")
