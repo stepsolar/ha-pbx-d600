@@ -1,0 +1,15 @@
+sync_clock:
+read_memory:
+  fields:
+    address:
+      required: true
+      example: "02a0"
+      selector:
+        text:
+send_raw:
+  fields:
+    payload:
+      required: true
+      example: "04 01 02 a0 80"
+      selector:
+        text:
