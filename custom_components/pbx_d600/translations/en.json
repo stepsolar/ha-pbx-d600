@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Centralino PBX D600",
+        "description": "Chiudi il programma PBX D600 sul PC prima di continuare: il centralino invia gli eventi a un solo client.",
+        "data": {
+          "host": "Indirizzo IP del centralino",
+          "port": "Porta UDP del centralino",
+          "local_port": "Porta UDP locale (Home Assistant)",
+          "num_extensions": "Numero di interni (porte)",
+          "num_trunks": "Numero di linee esterne"
+        }
+      }
+    },
+    "error": {"cannot_connect": "Il centralino non risponde. Controlla IP/porta e che il programma sul PC sia chiuso."},
+    "abort": {"already_configured": "Centralino già configurato"}
+  },
+  "entity": {"binary_sensor": {"connected": {"name": "Collegamento"}}},
+  "services": {
+    "sync_clock": {"name": "Sincronizza ora", "description": "Invia l'ora di Home Assistant al centralino."},
+    "read_memory": {"name": "Leggi memoria", "description": "Legge 128 byte di configurazione dal centralino (solo lettura).", "fields": {"address": {"name": "Indirizzo (esadecimale)", "description": "Es. 02a0"}}},
+    "send_raw": {"name": "Invia comando grezzo", "description": "AVANZATO: invia un comando al centralino (lunghezza e checksum aggiunti automaticamente). Un comando errato può modificare la configurazione.", "fields": {"payload": {"name": "Comando (esadecimale)", "description": "Es. 04 01 02 a0 80"}}}
+  }
+}
