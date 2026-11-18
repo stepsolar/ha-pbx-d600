@@ -15,6 +15,8 @@ OFFLINE_AFTER = 95  # secondi senza risposta -> disconnesso
 
 SIGNAL_UPDATE = f"{DOMAIN}_update_{{}}"
 EVENT_PBX = f"{DOMAIN}_event"
+EVENT_CALL = f"{DOMAIN}_call"  # a fine chiamata, con tutti i dati
+CALL_LIST_SIZE = 30  # chiamate mostrate negli attributi dei sensori
 
 # Stati interni
 EXT_IDLE = "libero"
