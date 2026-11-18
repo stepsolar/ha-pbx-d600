@@ -70,6 +70,12 @@ class PbxClient:
         self.last_cid_trunk: int | None = None
         self.last_cid_time: datetime | None = None
 
+        # Registro chiamate
+        self.calls: list[dict] = []  # più recenti prima
+        self._active: dict[int, dict] = {}  # chiamate in corso per linea
+        self.unknown_frames: list[str] = []
+        self.on_call_ended: Callable[[dict], None] | None = None
+
     # ------------------------------------------------------------ lifecycle
     @property
     def connected(self) -> bool:
@@ -170,7 +176,64 @@ class PbxClient:
         for cb in list(self._listeners):
             cb(msg)
 
+    # ------------------------------------------------------------ registro chiamate
+    def _ext(self, port: int | None) -> str | None:
+        return None if port is None else self.extensions.get(port, str(port))
+
+    def _call_start(self, trunk: int, direction: str) -> dict:
+        call = {
+            "direzione": direction,  # "entrante" / "uscente"
+            "linea": trunk,
+            "numero": None,
+            "interno": None,
+            "inizio": self._now().isoformat(timespec="seconds"),
+            "risposta": None,
+            "fine": None,
+            "durata": 0,
+            "esito": None,
+        }
+        self._active[trunk] = call
+        return call
+
+    def _call_end(self, trunk: int) -> None:
+        call = self._active.pop(trunk, None)
+        if call is None:
+            return
+        end = self._now()
+        call["fine"] = end.isoformat(timespec="seconds")
+        if call["risposta"]:
+            call["durata"] = int((end - datetime.fromisoformat(call["risposta"])).total_seconds())
+            call["esito"] = "risposta" if call["direzione"] == "entrante" else "effettuata"
+        else:
+            call["esito"] = "persa" if call["direzione"] == "entrante" else "non risposta"
+        self.calls.insert(0, call)
+        del self.calls[200:]
+        if self.on_call_ended:
+            self.on_call_ended(call)
+
+    def _track_calls(self, m: p.Message) -> None:
+        k = m.kind
+        if k == "trunk_ringing" and m.trunk not in self._active:
+            self._call_start(m.trunk, "entrante")
+        elif k == "caller_id":
+            call = self._active.get(m.trunk) or self._call_start(m.trunk, "entrante")
+            call["numero"] = m.number
+        elif k == "trunk_connected":
+            call = self._active.get(m.trunk)
+            if call is None:
+                # linea impegnata senza squillo prima: chiamata in uscita
+                call = self._call_start(m.trunk, "uscente")
+            call["interno"] = self._ext(m.port)
+            if call["risposta"] is None:
+                call["risposta"] = self._now().isoformat(timespec="seconds")
+        elif k == "trunk_released":
+            self._call_end(m.trunk)
+        elif k == "unknown":
+            self.unknown_frames.insert(0, f"{self._now().isoformat(timespec='seconds')} {m.raw.hex(' ')}")
+            del self.unknown_frames[30:]
+
     def _apply(self, m: p.Message) -> None:
+        self._track_calls(m)
         k = m.kind
         if k == "clock_ack":
             if self._clock_waiter and not self._clock_waiter.done():
