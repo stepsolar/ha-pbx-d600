@@ -1,14 +1,11 @@
 name: PBX D600
-version: "1.0.0"
+version: "1.0.1"
 slug: pbx_d600
 description: Centralino PBX D600 - stato linee e interni, registro chiamate, rubrica
 url: https://github.com/stepsolar/ha-pbx-d600
 arch:
   - aarch64
   - amd64
-  - armv7
-  - armhf
-  - i386
 init: false
 startup: application
 boot: auto
